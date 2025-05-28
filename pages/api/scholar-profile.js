@@ -1,16 +1,19 @@
+import chromium from 'chrome-aws-lambda';
 import puppeteer from 'puppeteer-core';
-import path from 'path';
-
-const CHROME_PATH = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'; // Adjust as needed
 
 export default async function handler(req, res) {
   const { url } = req.body;
 
   try {
+    const executablePath = process.env.AWS_REGION
+      ? await chromium.executablePath // On Vercel / AWS Lambda
+      : 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'; // Local Windows path
+
     const browser = await puppeteer.launch({
-      executablePath: CHROME_PATH,
-      headless: 'new',
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath,
+      headless: chromium.headless,
     });
 
     const page = await browser.newPage();
@@ -26,7 +29,6 @@ export default async function handler(req, res) {
     });
 
     await browser.close();
-    console.log(result)
     res.status(200).json(result);
   } catch (err) {
     console.error('Scraper error:', err);
