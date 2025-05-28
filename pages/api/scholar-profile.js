@@ -1,37 +1,41 @@
-import chromium from 'chrome-aws-lambda';
-import puppeteer from 'puppeteer-core';
+import axios from 'axios';
+import * as cheerio from 'cheerio';
 
 export default async function handler(req, res) {
   const { url } = req.body;
 
   try {
-    const executablePath = process.env.AWS_REGION
-      ? await chromium.executablePath // On Vercel / AWS Lambda
-      : 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'; // Local Windows path
-
-    const browser = await puppeteer.launch({
-      args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
-      executablePath,
-      headless: chromium.headless,
+    const response = await axios.get(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9'
+      }
     });
 
-    const page = await browser.newPage();
-    await page.goto(url, { waitUntil: 'domcontentloaded' });
+    const $ = cheerio.load(response.data);
 
-    const result = await page.evaluate(() => {
-      const interests = [...document.querySelectorAll('a[href*="user"]')]
-        .map(a => a.textContent.trim()).filter(Boolean);
-      const papers = [...document.querySelectorAll('tr.gsc_a_tr')]
-        .map(row => row.querySelector('.gsc_a_at')?.textContent.trim()).filter(Boolean);
-      const citation = document.querySelector('td.gsc_rsb_std')?.textContent.trim() || '0';
-      return { interests, papers, citations: parseInt(citation, 10) };
+    const interests = [];
+    $('a[href*="user"]').each((_, el) => {
+      const text = $(el).text().trim();
+      if (text) interests.push(text);
     });
 
-    await browser.close();
-    res.status(200).json(result);
+    const papers = [];
+    $('tr.gsc_a_tr').each((_, row) => {
+      const title = $(row).find('.gsc_a_at').text().trim();
+      if (title) papers.push(title);
+    });
+
+    const citation = $('td.gsc_rsb_std').first().text().trim() || '0';
+
+    res.status(200).json({
+      interests,
+      papers,
+      citations: parseInt(citation, 10)
+    });
+
   } catch (err) {
-    console.error('Scraper error:', err);
-    res.status(500).json({ error: 'Failed to fetch scholar data', details: err.message });
+    console.error('Cheerio scraper error:', err.message);
+    res.status(500).json({ error: 'Scraping failed', details: err.message });
   }
 }
